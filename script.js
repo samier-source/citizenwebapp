@@ -1,85 +1,218 @@
-/* layout like your screenshot */
-:root{
-  --navy:#163c8c;
-  --blue:#2563eb;
-  --red:#e02424;
-  --muted:#f3f4f6;
-  --card:#ffffff;
-  --radius:12px;
+/* App using Leaflet + localStorage to keep reports persistent.
+   UI matches the screenshot: header left title, right blue button,
+   map fills page, bottom red Raise Issue button, modal form.
+*/
+
+const STORAGE_KEY = 'citizen_reports_v1';
+let map, tempPickHandler = null;
+let isAuthority = false; // toggled by header button
+let markers = {}; // { id: L.marker }
+
+function loadReports(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return raw ? JSON.parse(raw) : [];
 }
 
-*{box-sizing:border-box}
-html,body,#map{height:100%;margin:0;padding:0}
-body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--muted); color:#111}
-
-/* header */
-.site-header{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:14px 18px;
-  background:var(--card);
-  border-bottom:1px solid rgba(0,0,0,0.06);
-  position:relative;
-  z-index:1000;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+function saveReports(list){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
-.brand-title{display:flex;flex-direction:column;line-height:1}
-.brand-top{color:var(--blue); font-weight:700; font-size:18px}
-.brand-bottom{color:var(--blue); font-weight:700; font-size:18px; margin-top:-4px}
+/* create unique id */
+function uid(){ return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
 
-/* buttons in header */
-.hdr-right{display:flex;gap:12px;align-items:center}
-.btn{cursor:pointer;border:0;padding:10px 14px;border-radius:10px;font-weight:600}
-.btn-large{padding:14px 18px}
-.btn-blue{background:var(--blue); color:white; box-shadow: 0 8px 20px rgba(37,99,235,0.12)}
-.btn-ghost{background:transparent;color:#333;border:1px solid rgba(0,0,0,0.06)}
-.btn-red{background:var(--red); color:white; box-shadow: 0 10px 20px rgba(224,36,36,0.15)}
-.btn-small{padding:6px 10px;font-size:13px;border-radius:8px}
+/* add marker to map and store to markers map */
+function addMarkerToMap(issue){
+  const col = (issue.status==='Resolved') ? '#10b981' : (issue.status==='In Progress') ? '#f59e0b' : '#c30000';
+  const circle = L.circleMarker([issue.lat, issue.lng], {
+    radius: 8, fillColor: col, color: '#fff', weight: 1, fillOpacity: 0.95
+  }).addTo(map);
 
-/* map takes remaining space */
-#map{width:100%; height: calc(100% - 72px);} /* header ~ 72px + controls spacing */
+  const content = buildPopupContent(issue);
+  circle.bindPopup(content, {maxWidth: 300});
+  circle.on('popupopen', () => {
+    // when popup opens wire authority controls
+    if(isAuthority){
+      const statusSelect = document.querySelector(`#status-select-${issue.id}`);
+      const updateBtn = document.querySelector(`#update-btn-${issue.id}`);
+      if(updateBtn && statusSelect){
+        updateBtn.onclick = () => {
+          const newStatus = statusSelect.value;
+          updateIssueStatus(issue.id, newStatus);
+          circle.closePopup();
+        };
+      }
+    }
+  });
 
-/* Raise Issue button - bottom center */
-#raiseIssueBtn{
-  position:fixed;
-  left:50%;
-  transform:translateX(-50%);
-  bottom:20px;
-  z-index:1100;
-  width:200px;
-  max-width:90%;
-  height:50px;
-  border-radius:30px;
-  font-size:18px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  border:0;
+  markers[issue.id] = circle;
 }
 
-/* Modal */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1200}
-.hidden{display:none}
-.modal-card{width:420px;max-width:95%;background:var(--card);border-radius:12px;box-shadow:0 18px 40px rgba(12,20,30,0.12);overflow:hidden}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(0,0,0,0.06)}
-.modal-header h3{margin:0;font-size:18px}
-.modal-close{background:transparent;border:0;font-size:24px;cursor:pointer;color:#666}
-.modal-body{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
-.modal-body label{display:flex;flex-direction:column;font-size:14px;color:#333;gap:6px}
-.modal-body input[type="text"], .modal-body select, .modal-body textarea{padding:10px;border-radius:8px;border:1px solid #e6e6e6;font-size:14px}
-.modal-actions{display:flex;gap:10px;justify-content:flex-end;padding:12px 18px;border-top:1px solid rgba(0,0,0,0.04)}
+/* build popup HTML; includes photo if present */
+function buildPopupContent(issue){
+  const imgHtml = issue.photo ? `<img class="issue-photo" src="${issue.photo}" alt="photo">` : '';
+  let authControls = '';
+  if(isAuthority){
+    authControls = `
+      <div style="margin-top:8px">
+        <label style="font-weight:600">Update Status</label>
+        <select id="status-select-${issue.id}" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ddd">
+          <option ${issue.status==='Received'?'selected':''}>Received</option>
+          <option ${issue.status==='In Progress'?'selected':''}>In Progress</option>
+          <option ${issue.status==='Resolved'?'selected':''}>Resolved</option>
+        </select>
+        <button id="update-btn-${issue.id}" style="margin-top:8px;padding:8px 10px;background:#16a34a;color:white;border:0;border-radius:6px;cursor:pointer">Update</button>
+      </div>`;
+  }
 
-.small{padding:6px 8px;font-size:13px;border-radius:8px}
+  return `
+    <div style="min-width:200px">
+      <div style="font-weight:700;margin-bottom:6px">${escapeHtml(issue.type)}</div>
+      <div style="font-size:13px;color:#333">${escapeHtml(issue.desc || '')}</div>
+      <div style="font-size:12px;color:#666;margin-top:8px">By: ${escapeHtml(issue.reportedBy||'Anonymous')}</div>
+      <div style="font-size:12px;color:#666">Status: <strong>${escapeHtml(issue.status)}</strong></div>
+      ${imgHtml}
+      ${authControls}
+    </div>`;
+}
 
-/* location-row - inline fields */
-.location-row{display:flex;gap:8px;align-items:center}
-.location-row input{flex:1}
+/* simple escape to avoid XSS in stored data */
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-/* popup image */
-.issue-photo{max-width:220px;display:block;margin-top:8px;border-radius:8px}
+/* redraw all markers (clear then add) */
+function redrawMarkers(){
+  Object.values(markers).forEach(m => m.remove());
+  markers = {};
+  const reports = loadReports();
+  reports.forEach(addMarkerToMap);
+}
 
-/* leaflet popup style small tweak */
-.leaflet-popup-content-wrapper{border-radius:10px}
+/* update status in storage */
+function updateIssueStatus(id, newStatus){
+  const arr = loadReports();
+  const idx = arr.findIndex(r => r.id === id);
+  if(idx !== -1){
+    arr[idx].status = newStatus;
+    saveReports(arr);
+    redrawMarkers();
+  }
+}
+
+/* add new issue to storage and place marker */
+async function addNewIssue({type, desc, lat, lng, photoDataURL}){
+  const reports = loadReports();
+  const item = {
+    id: uid(),
+    type, desc, lat, lng,
+    photo: photoDataURL || null,
+    status: 'Received',
+    reportedBy: 'Anonymous',
+    createdAt: Date.now()
+  };
+  reports.push(item);
+  saveReports(reports);
+  addMarkerToMap(item);
+}
+
+/* initialize UI and map */
+function init(){
+  // Leaflet map centered on Mumbai area like your screenshot
+  map = L.map('map', {zoomControl:true}).setView([19.0896, 72.8656], 11);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // load saved markers
+  redrawMarkers();
+
+  // wire header authority button
+  const authBtn = document.getElementById('toggleAuthorityBtn');
+  authBtn.addEventListener('click', () => {
+    isAuthority = !isAuthority;
+    authBtn.textContent = isAuthority ? 'Switch to Citizen View' : 'Switch to Authority View';
+    redrawMarkers();
+  });
+
+  // raise issue button opens modal with map center coords by default
+  const raiseBtn = document.getElementById('raiseIssueBtn');
+  const reportModal = document.getElementById('reportModal');
+  const closeReport = document.getElementById('closeReportModal');
+  const cancelReport = document.getElementById('cancelReport');
+  const pickLocBtn = document.getElementById('pickLocBtn');
+  const latlngInput = document.getElementById('issueLatLng');
+  const photoInput = document.getElementById('issuePhoto');
+
+  raiseBtn.addEventListener('click', () => {
+    // set default location to map center
+    const c = map.getCenter();
+    latlngInput.value = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
+    // clear form
+    document.getElementById('issueType').value = 'Accident';
+    document.getElementById('issueDesc').value = '';
+    photoInput.value = '';
+    reportModal.classList.remove('hidden');
+  });
+
+  closeReport.addEventListener('click', () => reportModal.classList.add('hidden'));
+  cancelReport.addEventListener('click', () => reportModal.classList.add('hidden'));
+
+  // allow picking location from map when modal open
+  pickLocBtn.addEventListener('click', () => {
+    // brief instruction
+    pickLocBtn.textContent = 'Click on map...';
+    tempPickHandler = function(e){
+      latlngInput.value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+      pickLocBtn.textContent = 'Pick on map';
+      map.off('click', tempPickHandler);
+      tempPickHandler = null;
+    };
+    map.on('click', tempPickHandler);
+  });
+
+  // submit form
+  const form = document.getElementById('reportForm');
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    // get values
+    const type = document.getElementById('issueType').value;
+    const desc = document.getElementById('issueDesc').value;
+    const latlng = document.getElementById('issueLatLng').value.trim();
+    if(!latlng){ alert('Pick a location'); return; }
+    const [latStr, lngStr] = latlng.split(',').map(s => s.trim());
+    const lat = parseFloat(latStr), lng = parseFloat(lngStr);
+    if(Number.isNaN(lat) || Number.isNaN(lng)){ alert('Invalid coordinates'); return; }
+
+    // handle photo file -> data URL
+    const file = photoInput.files[0];
+    let dataURL = null;
+    if(file){
+      dataURL = await toDataURL(file);
+    }
+
+    await addNewIssue({type, desc, lat, lng, photoDataURL: dataURL});
+    reportModal.classList.add('hidden');
+  });
+
+  // popup view modal handlers
+  document.getElementById('closeViewModal').addEventListener('click', () => {
+    document.getElementById('viewModal').classList.add('hidden');
+  });
+  document.getElementById('closeViewBtn').addEventListener('click', () => {
+    document.getElementById('viewModal').classList.add('hidden');
+  });
+
+  // clicking a marker's popup content update buttons handled in addMarkerToMap
+}
+
+/* helper to convert file to dataURL */
+function toDataURL(file){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+/* start */
+window.addEventListener('load', init);
