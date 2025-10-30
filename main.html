@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citizen Road Reporting MVP</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet.js for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+    <style>
+        /* Set height for the map */
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        /* Custom styles for Leaflet icons */
+        .leaflet-div-icon {
+            background: transparent;
+            border: none;
+        }
+        .custom-marker-pin {
+            width: 30px;
+            height: 30px;
+            border-radius: 50% 50% 50% 0;
+            background: #c30000;
+            position: absolute;
+            transform: rotate(-45deg);
+            left: 50%;
+            top: 50%;
+            margin: -15px 0 0 -15px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .custom-marker-pin::after {
+            content: '';
+            width: 14px;
+            height: 14px;
+            margin: 8px 0 0 8px;
+            background: #ffffff;
+            position: absolute;
+            border-radius: 50%;
+        }
+        /* Status-based colors */
+        .marker-received { background-color: #c30000; } /* Red */
+        .marker-in-progress { background-color: #f59e0b; } /* Amber */
+        .marker-resolved { background-color: #10b981; } /* Green */
+    </style>
+</head>
+<body class="font-sans antialiased bg-gray-100 text-gray-900 h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white shadow-md w-full p-4 z-20">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl md:text-2xl font-bold text-blue-600">Citizen Road Reporting</h1>
+            <div class="flex items-center space-x-4">
+                <span id="user-id-display" class="text-xs text-gray-500 hidden md:block" title="Your User ID"></span>
+                <button id="toggle-view-btn" class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition-colors">
+                    Switch to Authority View
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow relative">
+        <!-- Map Container -->
+        <div id="map" class="z-0"></div>
+
+        <!-- Citizen: Report Button -->
+        <div id="citizen-ui" class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
+            <button id="report-instruct-btn" class="px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-lg hover:bg-red-700 transition-all transform hover:scale-105">
+                Report New Issue (Click on Map)
+            </button>
+        </div>
+        
+        <!-- Info Toast -->
+        <div id="info-toast" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-lg shadow-md" role="alert">
+            <span class="block sm:inline"></span>
+        </div>
+    </main>
+
+    <!-- Modal: Report New Issue (for Citizen) -->
+    <div id="report-modal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Report New Issue</h2>
+                <button id="close-report-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="report-form">
+                <div class="mb-4">
+                    <label for="issue-type" class="block text-sm font-medium text-gray-700 mb-1">Issue Type</label>
+                    <select id="issue-type" name="issue-type" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="Accident">Accident</option>
+                        <option value="Blockage">Road Blockage</option>
+                        <option value="Waterlogging">Waterlogging</option>
+                        <option value="Signal Failure">Signal Failure</option>
+                        <option value="Pothole">Pothole</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="mb-6">
+                    <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
+                    <textarea id="description" name="description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., 'Large tree blocking both lanes'"></textarea>
+                </div>
+                <button type="submit" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-lg hover:bg-blue-700 transition-all">
+                    Submit Report
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: View/Update Issue (for Authority & Citizen) -->
+    <div id="view-modal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Issue Details</h2>
+                <button id="close-view-modal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <!-- Details -->
+            <div class="space-y-3 mb-6">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-500">Issue Type</h3>
+                    <p id="view-issue-type" class="text-lg font-semibold"></p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-gray-500">Description</h3>
+                    <p id="view-description" class="text-lg"></p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-gray-500">Current Status</h3>
+                    <p id="view-status" class="text-lg font-bold"></p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-gray-500">Reported By (User ID)</h3>
+                    <p id="view-reporter" class="text-sm text-gray-600 break-all"></p>
+                </div>
+            </div>
+            
+            <!-- Authority-Only Section -->
+            <div id="authority-controls" class="hidden space-y-4">
+                <hr>
+                <h3 class="text-xl font-semibold text-gray-800 pt-2">Update Status</h3>
+                <div class="mb-4">
+                    <label for="update-status" class="block text-sm font-medium text-gray-700 mb-1">New Status</label>
+                    <select id="update-status" name="update-status" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="Received">Received</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Resolved">Resolved</option>
+                    </select>
+                </div>
+                <button id="update-status-btn" class="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-lg hover:bg-green-700 transition-all">
+                    Update Issue Status
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            addDoc, 
+            updateDoc, 
+            onSnapshot, 
+            query,
+            serverTimestamp,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- App Config & State ---
+        
+        // Use environment variables provided by the platform
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-citizen-app';
+        const firebaseConfig = {
+  apiKey: "AIzaSyDrUmBXIllRZbEgGULgGWeNmfp_NO9CB4Y",
+  authDomain: "roadintersectionproject.firebaseapp.com",
+  projectId: "roadintersectionproject",
+  storageBucket: "roadintersectionproject.firebasestorage.app",
+  messagingSenderId: "300868445861",
+  appId: "1:300868445861:web:58fe033d1adeacb0610f4c",
+  measurementId: "G-F4LMHHMY9M"
+};
+
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Firebase services
+        let app, db, auth;
+        
+        // App state
+        let currentView = 'citizen'; // 'citizen' or 'authority'
+        let map;
+        let userId = null;
+        let isAuthReady = false;
+        let issuesCache = {}; // To store markers
+        let newReportLatLng = null; // Store lat/lng from map click
+        let activeIssueId = null; // Store doc ID for updates
+
+        // Firestore collection path (publicly viewable)
+        const ISSUES_COLLECTION_PATH = `artifacts/${appId}/public/data/road-issues`;
+
+        // DOM Elements
+        const toggleViewBtn = document.getElementById('toggle-view-btn');
+        const citizenUI = document.getElementById('citizen-ui');
+        const reportModal = document.getElementById('report-modal');
+        const reportForm = document.getElementById('report-form');
+        const viewModal = document.getElementById('view-modal');
+        const authorityControls = document.getElementById('authority-controls');
+        const updateStatusBtn = document.getElementById('update-status-btn');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const infoToast = document.getElementById('info-toast');
+
+        // --- Initialization ---
+
+        /**
+         * Initializes the Leaflet map.
+         */
+        function initMap() {
+            // Start map centered on a default location (e.g., Mumbai)
+            map = L.map('map').setView([19.0760, 72.8777], 12);
+	    if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 14),
+    (err) => console.error('Location access denied or unavailable:', err)
+  );
+}
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Add map click listener for reporting
+            map.on('click', handleMapClick);
+            
+            // Load issues if auth is ready
+            if (isAuthReady) {
+                loadIssues();
+            }
+        }
+
+        /**
+         * Initializes Firebase app, auth, and Firestore.
+         * Sets up auth listener and logs in the user.
+         */
+        async function initFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('Debug'); // Enable Firestore logging
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        console.log('User is signed in:', user.uid);
+                        userId = user.uid;
+                        userIdDisplay.textContent = `User ID: ${userId}`;
+                        userIdDisplay.classList.remove('hidden');
+                        isAuthReady = true;
+                        // If map is already initialized, load issues
+                        if (map) {
+                            loadIssues();
+                        }
+                    } else {
+                        console.log('User is signed out. Attempting sign-in...');
+                        isAuthReady = false;
+                        userId = null;
+                        userIdDisplay.classList.add('hidden');
+                        // Sign in
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (authError) {
+                            console.error('Error signing in:', authError);
+                            showToast('Error connecting to authentication.', 'error');
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Error initializing Firebase:', e);
+                showToast('Failed to initialize application.', 'error');
+            }
+        }
+
+        // --- Core Logic: Issues ---
+
+        /**
+         * Sets up a real-time listener for the issues collection.
+         */
+        function loadIssues() {
+            if (!isAuthReady || !db) {
+                console.log('Auth or DB not ready, skipping issue load.');
+                return;
+            }
+            
+            const issuesColRef = collection(db, ISSUES_COLLECTION_PATH);
+            const q = query(issuesColRef);
+
+            onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const docId = change.doc.id;
+                    const data = change.doc.data();
+
+                    if (change.type === "added") {
+                        if (!issuesCache[docId]) {
+                            createMarker(docId, data);
+                        }
+                    }
+                    if (change.type === "modified") {
+                        if (issuesCache[docId]) {
+                            updateMarker(docId, data);
+                        }
+                    }
+                    if (change.type === "removed") {
+                        if (issuesCache[docId]) {
+                            removeMarker(docId);
+                        }
+                    }
+                });
+            }, (error) => {
+                console.error("Error listening to issues:", error);
+                showToast('Error loading issues from database.', 'error');
+            });
+        }
+
+        /**
+         * Creates a custom HTML icon for the marker.
+         */
+        function createMarkerIcon(status) {
+            let statusClass = 'marker-received'; // Default red
+            if (status === 'In Progress') statusClass = 'marker-in-progress'; // Amber
+            if (status === 'Resolved') statusClass = 'marker-resolved'; // Green
+
+            return L.divIcon({
+                className: 'leaflet-div-icon',
+                html: `<div class="custom-marker-pin ${statusClass}"></div>`,
+                iconSize: [30, 42],
+                iconAnchor: [15, 42]
+            });
+        }
+
+        /**
+         * Creates and adds a new marker to the map.
+         */
+        function createMarker(docId, data) {
+            if (!data.lat || !data.lng) {
+                console.warn('Skipping issue, missing location:', docId);
+                return;
+            }
+            
+            const marker = L.marker([data.lat, data.lng], {
+                icon: createMarkerIcon(data.status)
+            }).addTo(map);
+
+            marker.on('click', () => {
+                openViewModal(docId, data);
+            });
+            
+            issuesCache[docId] = { marker, data };
+        }
+
+        /**
+         * Updates an existing marker's icon and data.
+         */
+        function updateMarker(docId, newData) {
+            const issue = issuesCache[docId];
+            issue.data = newData;
+            // Update icon color based on new status
+            issue.marker.setIcon(createMarkerIcon(newData.status));
+            
+            // If this is the currently viewed issue, update the modal
+            if (viewModal.style.display !== 'hidden' && activeIssueId === docId) {
+                populateViewModal(newData);
+            }
+        }
+
+        /**
+         * Removes a marker from the map and cache.
+         */
+        function removeMarker(docId) {
+            const issue = issuesCache[docId];
+            issue.marker.remove();
+            delete issuesCache[docId];
+        }
+
+        // --- UI & Event Handlers ---
+
+        /**
+         * Toggles the view between 'citizen' and 'authority'.
+         */
+        function handleToggleView() {
+            if (currentView === 'citizen') {
+                currentView = 'authority';
+                toggleViewBtn.textContent = 'Switch to Citizen View';
+                toggleViewBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                toggleViewBtn.classList.add('bg-gray-700', 'hover:bg-gray-800');
+                citizenUI.classList.add('hidden');
+                showToast('Authority View enabled. Click pins to update status.', 'info');
+            } else {
+                currentView = 'citizen';
+                toggleViewBtn.textContent = 'Switch to Authority View';
+                toggleViewBtn.classList.remove('bg-gray-700', 'hover:bg-gray-800');
+                toggleViewBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                citizenUI.classList.remove('hidden');
+                showToast('Citizen View enabled. Click map to report issues.', 'info');
+            }
+            // Close any open modals on view switch
+            closeReportModal();
+            closeViewModal();
+        }
+
+        /**
+         * Handles clicks on the map to initiate a new report.
+         */
+        function handleMapClick(e) {
+            if (currentView !== 'citizen') return;
+            
+            newReportLatLng = e.latlng;
+            console.log('Map clicked for new report at:', newReportLatLng);
+            reportForm.reset();
+            reportModal.classList.remove('hidden');
+        }
+
+        /**
+         * Submits the new issue report to Firestore.
+         */
+        async function handleReportSubmit(e) {
+            e.preventDefault();
+            if (!newReportLatLng || !isAuthReady) {
+                showToast('Error: Location not set or not authenticated.', 'error');
+                return;
+            }
+
+            const issueType = document.getElementById('issue-type').value;
+            const description = document.getElementById('description').value;
+
+            const newIssue = {
+                type: issueType,
+                description: description || 'No description provided.',
+                status: 'Received',
+                lat: newReportLatLng.lat,
+                lng: newReportLatLng.lng,
+                reportedBy: userId,
+                createdAt: serverTimestamp()
+            };
+
+            try {
+                const docRef = await addDoc(collection(db, ISSUES_COLLECTION_PATH), newIssue);
+                console.log('Issue reported with ID:', docRef.id);
+                showToast('Issue reported successfully!', 'success');
+                closeReportModal();
+            } catch (error) {
+                console.error('Error adding document:', error);
+                showToast('Failed to submit report.', 'error');
+            }
+        }
+
+        /**
+         * Opens the modal to view issue details.
+         */
+        function openViewModal(docId, data) {
+            activeIssueId = docId;
+            populateViewModal(data);
+            
+            // Show/hide authority controls
+            if (currentView === 'authority') {
+                authorityControls.classList.remove('hidden');
+                document.getElementById('update-status').value = data.status;
+            } else {
+                authorityControls.classList.add('hidden');
+            }
+            
+            viewModal.classList.remove('hidden');
+        }
+        
+        /**
+         * Fills the view modal with issue data.
+         */
+        function populateViewModal(data) {
+            document.getElementById('view-issue-type').textContent = data.type;
+            document.getElementById('view-description').textContent = data.description;
+            document.getElementById('view-status').textContent = data.status;
+            document.getElementById('view-reporter').textContent = data.reportedBy;
+
+            // Style status
+            const statusEl = document.getElementById('view-status');
+            statusEl.classList.remove('text-red-600', 'text-amber-600', 'text-green-600');
+            if (data.status === 'Received') statusEl.classList.add('text-red-600');
+            else if (data.status === 'In Progress') statusEl.classList.add('text-amber-600');
+            else if (data.status === 'Resolved') statusEl.classList.add('text-green-600');
+        }
+
+        /**
+         * Updates an issue's status in Firestore.
+         */
+        async function handleStatusUpdate() {
+            if (!activeIssueId || !isAuthReady) {
+                showToast('Error: No issue selected or not authenticated.', 'error');
+                return;
+            }
+
+            const newStatus = document.getElementById('update-status').value;
+            const docRef = doc(db, ISSUES_COLLECTION_PATH, activeIssueId);
+
+            try {
+                await updateDoc(docRef, {
+                    status: newStatus
+                });
+                console.log('Issue status updated:', activeIssueId);
+                showToast('Issue status updated successfully!', 'success');
+                closeViewModal();
+            } catch (error) {
+                console.error('Error updating document:', error);
+                showToast('Failed to update status.', 'error');
+            }
+        }
+
+        // --- Utility Functions ---
+
+        function closeReportModal() {
+            reportModal.classList.add('hidden');
+            newReportLatLng = null;
+        }
+
+        function closeViewModal() {
+            viewModal.classList.add('hidden');
+            activeIssueId = null;
+        }
+
+        /**
+         * Shows a temporary toast message.
+         */
+        function showToast(message, type = 'info') {
+            const span = infoToast.querySelector('span');
+            span.textContent = message;
+            
+            // Reset classes
+            infoToast.classList.remove('hidden', 'bg-blue-100', 'border-blue-400', 'text-blue-700', 'bg-red-100', 'border-red-400', 'text-red-700', 'bg-green-100', 'border-green-400', 'text-green-700');
+            
+            if (type === 'error') {
+                infoToast.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+            } else if (type === 'success') {
+                infoToast.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+            } else {
+                infoToast.classList.add('bg-blue-100', 'border-blue-400', 'text-blue-700');
+            }
+            
+            infoToast.classList.remove('hidden');
+
+            setTimeout(() => {
+                infoToast.classList.add('hidden');
+            }, 3000);
+        }
+        
+        // --- Event Listeners Setup ---
+        
+        toggleViewBtn.addEventListener('click', handleToggleView);
+        reportForm.addEventListener('submit', handleReportSubmit);
+        updateStatusBtn.addEventListener('click', handleStatusUpdate);
+        
+        // Modal close buttons
+        document.getElementById('close-report-modal').addEventListener('click', closeReportModal);
+        document.getElementById('close-view-modal').addEventListener('click', closeViewModal);
+        
+        // --- Start App ---
+        initMap();
+        initFirebase();
+
+    </script>
+</body>
+</html>
