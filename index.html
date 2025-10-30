@@ -1,355 +1,135 @@
-// script.js
-// Leaflet map + Firebase (optional) + localStorage fallback.
-// Edit FIREBASE_CONFIG below to enable Firestore sync across devices.
-// If FIREBASE_CONFIG is null/empty, localStorage is used automatically.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Citizen Road Reporting MVP</title>
 
-/////////////////////// CONFIG ///////////////////////
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-// If you want to use Firebase (shared reports), paste your Firebase Web SDK config here.
-// Example:
-// const FIREBASE_CONFIG = {
-//   apiKey: "...",
-//   authDomain: "...",
-//   projectId: "...",
-//   storageBucket: "...",
-//   messagingSenderId: "...",
-//   appId: "..."
-// };
-const FIREBASE_CONFIG = null; // <--- put your firebase config object here, or leave null to use localStorage
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
 
-// Firestore collection name (if using Firebase)
-const FIRESTORE_COLLECTION = 'road-issues';
-
-// Local storage key (fallback)
-const LOCAL_KEY = 'citizen_reports_v1';
-
-//////////////////////////////////////////////////////
-
-// runtime state
-let map, isAuthority = false, tmpPickHandler = null;
-let markers = {}; // id -> leaflet layer
-let newReportLatLng = null;
-let activeIssueId = null;
-
-// Helpers
-function uid(){ return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
-function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-//////////////////// Storage layer (abstract) ////////////////////
-
-let storageImpl = null; // will be { init(), add(issue), onChange(cb), update(id, patch) }
-
-async function initLocalStorage() {
-  function loadAll(){
-    const raw = localStorage.getItem(LOCAL_KEY);
-    return raw ? JSON.parse(raw) : [];
-  }
-  function saveAll(arr){ localStorage.setItem(LOCAL_KEY, JSON.stringify(arr)); }
-  return {
-    async init(){ /* nothing */ },
-    async add(issue){
-      const arr = loadAll();
-      arr.push(issue);
-      saveAll(arr);
-      // notify
-      if(storageImpl._cb) storageImpl._cb('added', issue);
-    },
-    async onChange(cb){
-      storageImpl._cb = cb;
-      // initial push existing
-      const all = loadAll();
-      all.forEach(i => cb('added', i));
-    },
-    async update(id, patch){
-      const arr = loadAll();
-      const idx = arr.findIndex(x => x.id === id);
-      if(idx === -1) return;
-      arr[idx] = {...arr[idx], ...patch};
-      saveAll(arr);
-      if(storageImpl._cb) storageImpl._cb('modified', arr[idx]);
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
     }
-  };
-}
-
-//////////////////// Firebase layer (optional) ////////////////////
-
-async function initFirebaseLayer(config){
-  // lazy import SDKs only if needed
-  const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
-  const { getAuth, signInAnonymously, onAuthStateChanged } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
-  const { getFirestore, collection, addDoc, onSnapshot, query, updateDoc, doc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-
-  const app = initializeApp(config);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-
-  // Ensure anonymous sign-in
-  signInAnonymously(auth).catch(e => console.warn('FB auth:', e));
-  // simple wrapper
-  return {
-    async init(){ /* nothing */ },
-    async add(issue){
-      // add createdAt server timestamp
-      const toSave = {...issue};
-      toSave.createdAt = serverTimestamp();
-      const colRef = collection(db, FIRESTORE_COLLECTION);
-      await addDoc(colRef, toSave);
-    },
-    async onChange(cb){
-      const q = query(collection(db, FIRESTORE_COLLECTION));
-      onSnapshot(q, (snap) => {
-        snap.docChanges().forEach(change => {
-          const data = change.doc.data();
-          const id = change.doc.id;
-          const item = { id, ...data };
-          if(change.type === 'added') cb('added', item);
-          if(change.type === 'modified') cb('modified', item);
-          if(change.type === 'removed') cb('removed', item);
-        });
-      }, err => {
-        console.error('Firestore onSnapshot error', err);
-      });
-    },
-    async update(id, patch){
-      const docRef = doc(db, FIRESTORE_COLLECTION, id);
-      await updateDoc(docRef, patch);
+    #map {
+      height: 100%;
+      width: 100%;
+      z-index: 0;
     }
-  };
-}
-
-//////////////////// App UI & Map ////////////////////
-
-function buildPopupHtml(issue){
-  const imgHtml = issue.photo ? `<img class="issue-photo" src="${escapeHtml(issue.photo)}">` : '';
-  const authControls = isAuthority ? `
-    <div style="margin-top:8px">
-      <label style="font-weight:600">Update Status</label>
-      <select id="status-select-${issue.id}" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ddd">
-        <option ${issue.status==='Received'?'selected':''}>Received</option>
-        <option ${issue.status==='In Progress'?'selected':''}>In Progress</option>
-        <option ${issue.status==='Resolved'?'selected':''}>Resolved</option>
-      </select>
-      <button id="update-btn-${issue.id}" style="margin-top:8px;padding:8px 10px;background:#16a34a;color:white;border:0;border-radius:6px;cursor:pointer">Update</button>
-    </div>` : '';
-
-  return `
-    <div style="min-width:220px">
-      <div style="font-weight:700;margin-bottom:6px">${escapeHtml(issue.type)}</div>
-      <div style="font-size:13px;color:#333">${escapeHtml(issue.desc||'')}</div>
-      <div style="font-size:12px;color:#666;margin-top:8px">By: ${escapeHtml(issue.reportedBy||'Anonymous')}</div>
-      <div style="font-size:12px;color:#666">Status: <strong>${escapeHtml(issue.status)}</strong></div>
-      ${imgHtml}
-      ${authControls}
-    </div>`;
-}
-
-function addMarker(issue){
-  if(!issue.lat || !issue.lng) return;
-  const col = issue.status === 'Resolved' ? '#10b981' : (issue.status === 'In Progress' ? '#f59e0b' : '#c30000');
-  const layer = L.circleMarker([issue.lat, issue.lng], { radius:8, fillColor: col, color:'#fff', weight:1, fillOpacity:0.95 }).addTo(map);
-  layer.bindPopup(buildPopupHtml(issue), { maxWidth:320 });
-  layer.on('popupopen', () => {
-    // wire update button if authority
-    if(isAuthority){
-      const sel = document.getElementById(`status-select-${issue.id}`);
-      const btn = document.getElementById(`update-btn-${issue.id}`);
-      if(btn && sel){
-        btn.onclick = async () => {
-          const newStatus = sel.value;
-          await storageImpl.update(issue.id, { status: newStatus });
-        };
-      }
+    .leaflet-div-icon {
+      background: transparent;
+      border: none;
     }
-  });
-  markers[issue.id] = layer;
-}
-
-function removeMarker(id){
-  if(markers[id]) { try{ map.removeLayer(markers[id]); }catch(e){} delete markers[id]; }
-}
-
-function redrawAll(items){
-  // remove old
-  Object.keys(markers).forEach(k => removeMarker(k));
-  // add in order
-  items.forEach(i => addMarker(i));
-}
-
-async function startupStorage(){
-  if(FIREBASE_CONFIG){
-    try{
-      storageImpl = await initFirebaseLayer(FIREBASE_CONFIG);
-      console.log('Using Firebase storage');
-    } catch(e){
-      console.warn('Firebase init failed, falling back to localStorage', e);
-      storageImpl = await initLocalStorage();
+    .issue-photo {
+      width: 100%;
+      border-radius: 8px;
+      margin-top: 8px;
+      object-fit: cover;
     }
-  } else {
-    storageImpl = await initLocalStorage();
-    console.log('Using localStorage');
-  }
-  await storageImpl.init();
-}
+  </style>
+</head>
 
-async function initApp(){
-  // map init
-  map = L.map('map').setView([19.0896, 72.8656], 11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom:19 }).addTo(map);
+<body class="font-sans bg-gray-100 flex flex-col h-screen">
+  <!-- Header -->
+  <header class="bg-white shadow-md w-full p-4 z-20 flex justify-between items-center">
+    <h1 class="text-xl md:text-2xl font-bold text-blue-600">Citizen Road Reporting</h1>
+    <button
+      id="toggleAuthorityBtn"
+      class="px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600 transition"
+    >
+      Switch to Authority View
+    </button>
+  </header>
 
-  // UI elements
-  const authBtn = document.getElementById('toggleAuthorityBtn');
-  const raiseBtn = document.getElementById('raiseIssueBtn');
-  const reportModal = document.getElementById('reportModal');
-  const closeReport = document.getElementById('closeReportModal');
-  const cancelReport = document.getElementById('cancelReport');
-  const pickLocBtn = document.getElementById('pickLocBtn');
-  const latlngInput = document.getElementById('issueLatLng');
-  const photoInput = document.getElementById('issuePhoto');
-  const reportForm = document.getElementById('reportForm');
-  const viewModal = document.getElementById('viewModal');
-  const viewBody = document.getElementById('viewBody');
+  <!-- Main -->
+  <main class="relative flex-grow">
+    <div id="map"></div>
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
+      <button
+        id="raiseIssueBtn"
+        class="px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-lg hover:bg-red-700 transition-all transform hover:scale-105"
+      >
+        Report New Issue
+      </button>
+    </div>
+  </main>
 
-  // start storage
-  await startupStorage();
+  <!-- Report Modal -->
+  <div id="reportModal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-bold">Report New Issue</h2>
+        <button id="closeReportModal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+      </div>
 
-  // wire storage changes -> redraw
-  await storageImpl.onChange(async (type, item) => {
-    // gather all items (for local impl we re-run loader)
-    if(storageImpl === null) return;
-    // For local impl, it calls cb per item; easiest is to rebuild full list:
-    if(FIREBASE_CONFIG){
-      // firebase implementation sends added/modified with full item; maintain markers incremental
-      if(type === 'added') addMarker(item);
-      if(type === 'modified'){ removeMarker(item.id); addMarker(item); }
-      if(type === 'removed'){ removeMarker(item.id); }
-    } else {
-      // local impl: rebuild from localStorage
-      const raw = localStorage.getItem(LOCAL_KEY) || '[]';
-      const arr = JSON.parse(raw);
-      redrawAll(arr);
-    }
-  });
+      <form id="reportForm">
+        <div class="mb-4">
+          <label for="issueType" class="block text-sm font-medium text-gray-700 mb-1">Issue Type</label>
+          <select id="issueType" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            <option>Accident</option>
+            <option>Road Blockage</option>
+            <option>Waterlogging</option>
+            <option>Signal Failure</option>
+            <option>Pothole</option>
+            <option>Other</option>
+          </select>
+        </div>
 
-  // initial load for firebase: firebase.onChange will call added callbacks.
-  if(!FIREBASE_CONFIG){
-    const raw = localStorage.getItem(LOCAL_KEY) || '[]';
-    const arr = JSON.parse(raw);
-    redrawAll(arr);
-  }
+        <div class="mb-4">
+          <label for="issueDesc" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <textarea id="issueDesc" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
 
-  // toggle authority
-  authBtn.addEventListener('click', () => {
-    isAuthority = !isAuthority;
-    authBtn.textContent = isAuthority ? 'Switch to Citizen View' : 'Switch to Authority View';
-    // refresh popups to show/hide controls
-    if(FIREBASE_CONFIG){
-      // easiest: force full redraw by removing and re-adding via requesting all current docs
-      // but we rely on onChange events; simple approach: reload page state from storage
-      // For local we call redrawAll; for firebase user will see controls in subsequent popupopen because addMarker uses isAuthority state
-    } else {
-      const raw2 = localStorage.getItem(LOCAL_KEY) || '[]';
-      const arr2 = JSON.parse(raw2);
-      redrawAll(arr2);
-    }
-  });
+        <div class="mb-4">
+          <label for="issueLatLng" class="block text-sm font-medium text-gray-700 mb-1">Location</label>
+          <input id="issueLatLng" type="text" readonly class="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2" />
+          <button id="pickLocBtn" type="button" class="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800">Pick on Map</button>
+        </div>
 
-  // open report modal: prefill center coords
-  raiseBtn.addEventListener('click', () => {
-    const c = map.getCenter();
-    latlngInput.value = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
-    document.getElementById('issueType').value = 'Accident';
-    document.getElementById('issueDesc').value = '';
-    photoInput.value = '';
-    reportModal.classList.remove('hidden');
-  });
+        <div class="mb-6">
+          <label for="issuePhoto" class="block text-sm font-medium text-gray-700 mb-1">Upload Photo (Optional)</label>
+          <input id="issuePhoto" type="file" accept="image/*" class="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+        </div>
 
-  // close modal
-  closeReport.addEventListener('click', () => {
-    reportModal.classList.add('hidden');
-    if(tmpPickHandler){ map.off('click', tmpPickHandler); tmpPickHandler = null; document.getElementById('pickLocBtn').textContent = 'Pick on map'; }
-  });
-  cancelReport.addEventListener('click', () => {
-    reportModal.classList.add('hidden');
-    if(tmpPickHandler){ map.off('click', tmpPickHandler); tmpPickHandler = null; document.getElementById('pickLocBtn').textContent = 'Pick on map'; }
-  });
+        <div class="flex justify-end space-x-3">
+          <button id="cancelReport" type="button" class="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500">Cancel</button>
+          <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Submit</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-  // pick on map
-  pickLocBtn.addEventListener('click', () => {
-    pickLocBtn.textContent = 'Click on map...';
-    if(tmpPickHandler){ map.off('click', tmpPickHandler); tmpPickHandler = null; }
-    tmpPickHandler = function(e){
-      latlngInput.value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-      pickLocBtn.textContent = 'Pick on map';
-      map.off('click', tmpPickHandler);
-      tmpPickHandler = null;
-    };
-    map.on('click', tmpPickHandler);
-  });
+  <!-- View Modal -->
+  <div id="viewModal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-bold">Issue Details</h2>
+        <button id="closeViewModal" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+      </div>
+      <div id="viewBody"></div>
+      <div class="flex justify-end mt-4">
+        <button id="closeViewBtn" class="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500">Close</button>
+      </div>
+    </div>
+  </div>
 
-  // submit report
-  reportForm.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const type = document.getElementById('issueType').value;
-    const desc = document.getElementById('issueDesc').value.trim();
-    const latlng = latlngInput.value.trim();
-    if(!latlng){ alert('Pick a location'); return; }
-    const [latS, lngS] = latlng.split(',').map(s => s.trim());
-    const lat = parseFloat(latS), lng = parseFloat(lngS);
-    if(Number.isNaN(lat)||Number.isNaN(lng)){ alert('Invalid coordinates'); return; }
-
-    let photoData = null;
-    const f = photoInput.files[0];
-    if(f){
-      photoData = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(f);
-      });
-    }
-
-    const item = {
-      id: uid(),
-      type, desc,
-      lat, lng,
-      photo: photoData,
-      status: 'Received',
-      reportedBy: 'Anonymous',
-      createdAt: Date.now()
-    };
-
-    await storageImpl.add(item);
-    reportModal.classList.add('hidden');
-    if(!FIREBASE_CONFIG){
-      // local: redraw will be triggered via onChange callback; ensure immediate add
-      const raw = localStorage.getItem(LOCAL_KEY) || '[]';
-      const arr = JSON.parse(raw);
-      arr.push(item);
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(arr));
-      redrawAll(arr);
-    }
-  });
-
-  // view modal close
-  document.getElementById('closeViewModal').addEventListener('click', () => document.getElementById('viewModal').classList.add('hidden'));
-  document.getElementById('closeViewBtn').addEventListener('click', () => document.getElementById('viewModal').classList.add('hidden'));
-
-  // map click in citizen mode opens report modal and sets latlng
-  map.on('click', (e) => {
-    if(isAuthority) return;
-    // open report modal with clicked coords
-    document.getElementById('issueLatLng').value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-    document.getElementById('issueType').value = 'Accident';
-    document.getElementById('issueDesc').value = '';
-    document.getElementById('issuePhoto').value = '';
-    document.getElementById('reportModal').classList.remove('hidden');
-  });
-}
-
-// start app
-window.addEventListener('DOMContentLoaded', () => {
-  initApp().catch(e => {
-    console.error('App init error', e);
-    alert('App failed to start. Check console for details.');
-  });
-});
+  <!-- ✅ Correct script reference -->
+  <script src="script.js"></script>
+</body>
+</html>
