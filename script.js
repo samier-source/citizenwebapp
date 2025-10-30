@@ -1,56 +1,85 @@
-let map;
-let marker;
-
-function initMap() {
-  if (!navigator.geolocation) {
-    document.getElementById("message").innerText = "Geolocation not supported by this browser.";
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const userLocation = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude
-      };
-
-      map = new google.maps.Map(document.getElementById("map"), {
-        zoom: 14,
-        center: userLocation
-      });
-
-      marker = new google.maps.Marker({
-        position: userLocation,
-        map: map,
-        title: "You are here!"
-      });
-    },
-    (error) => {
-      document.getElementById("message").innerText = "Location access denied or unavailable.";
-      console.error(error);
-    }
-  );
+/* layout like your screenshot */
+:root{
+  --navy:#163c8c;
+  --blue:#2563eb;
+  --red:#e02424;
+  --muted:#f3f4f6;
+  --card:#ffffff;
+  --radius:12px;
 }
 
-// Buttons
-document.getElementById("reportBtn").addEventListener("click", () => {
-  if (!map) {
-    document.getElementById("message").innerText = "Map not loaded yet!";
-    return;
-  }
-  document.getElementById("message").innerText = "Click on the map to report an issue.";
+*{box-sizing:border-box}
+html,body,#map{height:100%;margin:0;padding:0}
+body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--muted); color:#111}
 
-  map.addListener("click", (e) => {
-    if (marker) marker.setMap(null);
-    marker = new google.maps.Marker({
-      position: e.latLng,
-      map: map,
-      title: "Reported Issue"
-    });
-    document.getElementById("message").innerText = `Issue reported at: ${e.latLng.lat().toFixed(5)}, ${e.latLng.lng().toFixed(5)}`;
-  });
-});
+/* header */
+.site-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:14px 18px;
+  background:var(--card);
+  border-bottom:1px solid rgba(0,0,0,0.06);
+  position:relative;
+  z-index:1000;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+}
 
-document.getElementById("switchViewBtn").addEventListener("click", () => {
-  alert("Switching to Authority View (Demo)");
-});
+.brand-title{display:flex;flex-direction:column;line-height:1}
+.brand-top{color:var(--blue); font-weight:700; font-size:18px}
+.brand-bottom{color:var(--blue); font-weight:700; font-size:18px; margin-top:-4px}
+
+/* buttons in header */
+.hdr-right{display:flex;gap:12px;align-items:center}
+.btn{cursor:pointer;border:0;padding:10px 14px;border-radius:10px;font-weight:600}
+.btn-large{padding:14px 18px}
+.btn-blue{background:var(--blue); color:white; box-shadow: 0 8px 20px rgba(37,99,235,0.12)}
+.btn-ghost{background:transparent;color:#333;border:1px solid rgba(0,0,0,0.06)}
+.btn-red{background:var(--red); color:white; box-shadow: 0 10px 20px rgba(224,36,36,0.15)}
+.btn-small{padding:6px 10px;font-size:13px;border-radius:8px}
+
+/* map takes remaining space */
+#map{width:100%; height: calc(100% - 72px);} /* header ~ 72px + controls spacing */
+
+/* Raise Issue button - bottom center */
+#raiseIssueBtn{
+  position:fixed;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:20px;
+  z-index:1100;
+  width:200px;
+  max-width:90%;
+  height:50px;
+  border-radius:30px;
+  font-size:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  border:0;
+}
+
+/* Modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:1200}
+.hidden{display:none}
+.modal-card{width:420px;max-width:95%;background:var(--card);border-radius:12px;box-shadow:0 18px 40px rgba(12,20,30,0.12);overflow:hidden}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(0,0,0,0.06)}
+.modal-header h3{margin:0;font-size:18px}
+.modal-close{background:transparent;border:0;font-size:24px;cursor:pointer;color:#666}
+.modal-body{padding:14px 18px;display:flex;flex-direction:column;gap:10px}
+.modal-body label{display:flex;flex-direction:column;font-size:14px;color:#333;gap:6px}
+.modal-body input[type="text"], .modal-body select, .modal-body textarea{padding:10px;border-radius:8px;border:1px solid #e6e6e6;font-size:14px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;padding:12px 18px;border-top:1px solid rgba(0,0,0,0.04)}
+
+.small{padding:6px 8px;font-size:13px;border-radius:8px}
+
+/* location-row - inline fields */
+.location-row{display:flex;gap:8px;align-items:center}
+.location-row input{flex:1}
+
+/* popup image */
+.issue-photo{max-width:220px;display:block;margin-top:8px;border-radius:8px}
+
+/* leaflet popup style small tweak */
+.leaflet-popup-content-wrapper{border-radius:10px}
