@@ -13,6 +13,7 @@
     crossorigin=""
   />
 
+  <!-- Your styles -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -29,17 +30,18 @@
     </div>
   </header>
 
+  <!-- map container -->
   <div id="map"></div>
 
-  <!-- Red report button bottom center -->
+  <!-- big red raise issue button bottom center -->
   <button id="raiseIssueBtn" class="btn btn-red">Raise Issue</button>
 
   <!-- Report Modal -->
-  <div id="reportModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-card">
+  <div id="reportModal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-card" role="document">
       <div class="modal-header">
         <h3>Report New Issue</h3>
-        <button id="closeReportModal" class="modal-close">&times;</button>
+        <button id="closeReportModal" class="modal-close" aria-label="Close report form">&times;</button>
       </div>
 
       <form id="reportForm" class="modal-body">
@@ -76,12 +78,12 @@
     </div>
   </div>
 
-  <!-- View/Edit Modal (used by Authority) -->
-  <div id="viewModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-card">
+  <!-- View Modal (for reading details / authority) -->
+  <div id="viewModal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-card" role="document">
       <div class="modal-header">
         <h3>Issue Details</h3>
-        <button id="closeViewModal" class="modal-close">&times;</button>
+        <button id="closeViewModal" class="modal-close" aria-label="Close view">&times;</button>
       </div>
 
       <div class="modal-body" id="viewBody">
@@ -94,7 +96,7 @@
     </div>
   </div>
 
-  <!-- Leaflet JS -->
+  <!-- Leaflet JS (loaded before our script) -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha512-QVjP6yk+YzH4KqvF5wFHVgu1K3qUp3JYH2wvYcXJ3jIZJX6RmqGZAC0vVvC6B+yJYymI7XhVJ8z7kO3x0kp9fQ=="
