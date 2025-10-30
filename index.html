@@ -1,91 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Citizen Road Reporting</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Citizen Road Reporting</h1>
 
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <div class="button-container">
+    <button id="switchViewBtn">Switch to Authority View</button>
+    <button id="reportBtn">Report New Issue</button>
+  </div>
 
-  <!-- Custom Styles -->
-  <link rel="stylesheet" href="style.css" />
+  <div id="map"></div>
+  <div id="message"></div>
 
-  <!-- Google Maps -->
+  <script src="script.js"></script>
+
+  <!-- ✅ Google Maps API script with your key -->
   <script async defer
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCn8AzyNwitjRZkeGxV99P94WjPK_54hVA&callback=initMap">
   </script>
-</head>
-
-<body class="bg-gray-100 text-gray-900 flex flex-col h-screen">
-  <!-- Header -->
-  <header class="bg-white shadow p-4 flex justify-between items-center">
-    <h1 class="text-xl font-bold text-blue-600">Citizen Road Reporting</h1>
-    <button id="toggleViewBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
-      Switch to Authority View
-    </button>
-  </header>
-
-  <!-- Map -->
-  <main class="flex-grow relative">
-    <div id="map"></div>
-    <div id="citizenUI" class="absolute bottom-6 left-1/2 transform -translate-x-1/2">
-      <button id="reportBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-3 rounded-lg shadow">
-        Report New Issue
-      </button>
-    </div>
-  </main>
-
-  <!-- Report Modal -->
-  <div id="reportModal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
-    <div class="bg-white p-6 rounded-lg w-96 shadow-lg">
-      <h2 class="text-2xl font-bold mb-4">Report New Issue</h2>
-      <form id="reportForm">
-        <label class="block mb-2 font-semibold">Issue Type</label>
-        <select id="issueType" class="border w-full mb-3 p-2 rounded">
-          <option>Accident</option>
-          <option>Blockage</option>
-          <option>Waterlogging</option>
-          <option>Signal Failure</option>
-          <option>Pothole</option>
-          <option>Other</option>
-        </select>
-
-        <label class="block mb-2 font-semibold">Description (optional)</label>
-        <textarea id="description" class="border w-full mb-4 p-2 rounded"></textarea>
-
-        <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">Submit</button>
-      </form>
-      <button id="closeReportModal" class="mt-3 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-    </div>
-  </div>
-
-  <!-- View Modal -->
-  <div id="viewModal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
-    <div class="bg-white p-6 rounded-lg w-96 shadow-lg">
-      <h2 class="text-2xl font-bold mb-4">Issue Details</h2>
-      <p><strong>Type:</strong> <span id="viewType"></span></p>
-      <p><strong>Description:</strong> <span id="viewDesc"></span></p>
-      <p><strong>Status:</strong> <span id="viewStatus"></span></p>
-      <p><strong>Reported By:</strong> <span id="viewUser"></span></p>
-
-      <div id="authorityControls" class="hidden mt-4">
-        <label class="block mb-1 font-semibold">Update Status</label>
-        <select id="updateStatus" class="border w-full mb-4 p-2 rounded">
-          <option value="Received">Received</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Resolved">Resolved</option>
-        </select>
-        <button id="updateStatusBtn" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">
-          Update
-        </button>
-      </div>
-
-      <button id="closeViewModal" class="mt-3 text-sm text-gray-600 hover:text-gray-800">Close</button>
-    </div>
-  </div>
-
-  <!-- Firebase + App Script -->
-  <script type="module" src="script.js"></script>
 </body>
 </html>
