@@ -1,40 +1,51 @@
-document.getElementById('openMapBtn').addEventListener('click', () => {
-  if (!navigator.geolocation) {
-    alert('Geolocation is not supported by your browser.');
-    return;
+// Simple working version: shows a map and allows marker placement
+
+document.addEventListener("DOMContentLoaded", function () {
+  const openMapBtn = document.getElementById("openMapBtn");
+
+  if (openMapBtn) {
+    openMapBtn.addEventListener("click", () => {
+      window.location.href = "main.html";
+    });
   }
 
-  navigator.geolocation.getCurrentPosition(success, error);
+  // If we are on main.html, initialize the map
+  if (window.location.pathname.includes("main.html")) {
+    initMap();
+  }
 });
 
-function success(position) {
-  const lat = position.coords.latitude;
-  const lon = position.coords.longitude;
-  const mapWindow = window.open('', '_blank');
-  mapWindow.document.write(`
-    <html>
-      <head>
-        <title>Map View</title>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-      </head>
-      <body style="margin:0">
-        <div id="map" style="height:100vh;width:100vw"></div>
-        <script>
-          const map = L.map('map').setView([${lat}, ${lon}], 15);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19
-          }).addTo(map);
-          L.marker([${lat}, ${lon}]).addTo(map)
-            .bindPopup('You are here!')
-            .openPopup();
-        <\/script>
-      </body>
-    </html>
-  `);
+function initMap() {
+  // Create the map container if it doesn't exist
+  let mapContainer = document.getElementById("map");
+  if (!mapContainer) {
+    mapContainer = document.createElement("div");
+    mapContainer.id = "map";
+    document.body.appendChild(mapContainer);
+  }
+
+  // Set basic map styles
+  mapContainer.style.width = "100vw";
+  mapContainer.style.height = "100vh";
+
+  // Load Google Maps API dynamically
+  const script = document.createElement("script");
+  script.src =
+    "https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=loadMap";
+  script.async = true;
+  document.head.appendChild(script);
 }
 
-function error(err) {
-  alert('Unable to retrieve location. Please enable location access.');
-  console.error(err);
+function loadMap() {
+  const map = new google.maps.Map(document.getElementById("map"), {
+    center: { lat: 19.076, lng: 72.8777 }, // Mumbai center (example)
+    zoom: 14,
+  });
+
+  map.addListener("click", (event) => {
+    new google.maps.Marker({
+      position: event.latLng,
+      map: map,
+    });
+  });
 }
