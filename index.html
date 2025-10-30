@@ -1,27 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Citizen Road Reporting</title>
-  <link rel="stylesheet" href="style.css">
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-o9N1jvA7YJdQJfKbnVG3JxrpEj6rLw9Vw4gU6SfxWbY4bIK6QmFZrLZq7r5GJZWrVQ36sg8RLLPJLbA72TWSKw=="
+    crossorigin=""
+  />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f0f2f5;
+    }
+
+    header {
+      background-color: #1e3a8a;
+      color: white;
+      text-align: center;
+      padding: 1rem;
+      font-size: 1.5rem;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    #map {
+      height: 90vh;
+      width: 100%;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      padding: 1rem;
+      background-color: #ffffff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .controls button {
+      padding: 0.7rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background-color: #2563eb;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .controls button:hover {
+      background-color: #1d4ed8;
+    }
+
+    .leaflet-popup-content {
+      font-size: 0.95rem;
+    }
+  </style>
 </head>
 <body>
-  <h1>Citizen Road Reporting</h1>
+  <header>Citizen Road Reporting</header>
 
-  <div class="button-container">
-    <button id="switchViewBtn">Switch to Authority View</button>
+  <div class="controls">
+    <button id="authorityBtn">Switch to Authority View</button>
     <button id="reportBtn">Report New Issue</button>
   </div>
 
   <div id="map"></div>
-  <div id="message"></div>
 
-  <script src="script.js"></script>
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha512-QVjP6yk+YzH4KqvF5wFHVgu1K3qUp3JYH2wvYcXJ3jIZJX6RmqGZAC0vVvC6B+yJYymI7XhVJ8z7kO3x0kp9fQ=="
+    crossorigin=""
+  ></script>
 
-  <!-- ✅ Google Maps API script with your key -->
-  <script async defer
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCn8AzyNwitjRZkeGxV99P94WjPK_54hVA&callback=initMap">
+  <script>
+    // Initialize the map
+    const map = L.map('map').setView([19.0896, 72.8656], 13); // Default: Mumbai Airport
+
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    // Example existing issues (replace with your data)
+    const issues = [
+      {
+        lat: 19.0896,
+        lng: 72.8656,
+        type: "Pothole",
+        description: "Large pothole near airport road."
+      },
+      {
+        lat: 19.105,
+        lng: 72.874,
+        type: "Streetlight",
+        description: "Broken streetlight causing low visibility."
+      }
+    ];
+
+    // Add issue markers
+    issues.forEach(issue => {
+      const marker = L.marker([issue.lat, issue.lng]).addTo(map);
+      marker.bindPopup(`<b>${issue.type}</b><br>${issue.description}`);
+    });
+
+    // Handle report new issue
+    document.getElementById('reportBtn').addEventListener('click', () => {
+      alert('Tap on the map to mark the issue location.');
+      let tempMarker;
+
+      function addTempMarker(e) {
+        if (tempMarker) map.removeLayer(tempMarker);
+        tempMarker = L.marker(e.latlng).addTo(map);
+        tempMarker.bindPopup(`
+          <b>New Issue</b><br>
+          Coordinates: ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}<br><br>
+          <button onclick="alert('Issue reported successfully!')">Submit</button>
+        `).openPopup();
+        map.off('click', addTempMarker);
+      }
+
+      map.on('click', addTempMarker);
+    });
+
+    // Handle switch to authority view
+    document.getElementById('authorityBtn').addEventListener('click', () => {
+      alert('Switched to Authority View (sample). Future feature can list all reports.');
+    });
   </script>
 </body>
 </html>
