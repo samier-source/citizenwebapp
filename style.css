@@ -1,68 +1,12 @@
-/* General reset */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  font-family: "Segoe UI", Arial, sans-serif;
-}
-
-/* Center homepage content */
-.container {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background: linear-gradient(to bottom right, #2b5876, #4e4376);
-  color: white;
-  text-align: center;
-}
-
-/* Main title */
-h1 {
-  font-size: 2.2rem;
-  margin-bottom: 10px;
-}
-
-/* Subtitle */
-p {
-  font-size: 1.1rem;
-  margin-bottom: 25px;
-}
-
-/* Button styling */
-button {
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  font-size: 1.1rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-button:hover {
-  background-color: #45a049;
-  transform: scale(1.05);
-}
-
-/* Map page styling */
 #map {
-  width: 100vw;
-  height: 100vh;
+  height: 100%;
+  width: 100%;
 }
 
-/* For smaller devices */
-@media (max-width: 600px) {
-  h1 {
-    font-size: 1.8rem;
-  }
-  p {
-    font-size: 1rem;
-  }
-  button {
-    font-size: 1rem;
-    padding: 10px 20px;
-  }
+.gm-style-iw {
+  font-size: 14px;
+}
+
+.hidden {
+  display: none !important;
 }
