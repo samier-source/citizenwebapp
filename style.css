@@ -1,12 +1,45 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+  background-color: #f0f2f5;
+}
+
+h1 {
+  background: #007bff;
+  color: white;
+  margin: 0;
+  padding: 15px;
+}
+
+.button-container {
+  margin: 15px;
+}
+
+button {
+  margin: 5px;
+  padding: 10px 15px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
 #map {
-  height: 100%;
-  width: 100%;
+  height: 80vh;
+  width: 90%;
+  margin: 10px auto;
+  border-radius: 8px;
+  border: 2px solid #007bff;
 }
 
-.gm-style-iw {
-  font-size: 14px;
-}
-
-.hidden {
-  display: none !important;
+#message {
+  margin: 10px;
+  color: red;
 }
